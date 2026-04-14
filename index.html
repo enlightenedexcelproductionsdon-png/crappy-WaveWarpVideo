@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WaveWarp Pro | GLSL Video Processor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+            overflow-x: hidden;
+        }
+
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        input[type=range] {
+            accent-color: #3b82f6;
+        }
+
+        .canvas-container {
+            box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
+            max-width: 100%;
+            max-height: 70vh;
+        }
+
+        #glCanvas {
+            width: 100%;
+            height: auto;
+            border-radius: 8px;
+            display: block;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 10px;
+        }
+
+        .loading-shimmer {
+            background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-900/50 sticky top-0 z-50">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
+                <i class="fas fa-wave-square text-white text-xl"></i>
+            </div>
+            <h1 class="text-xl font-extrabold tracking-tight">WAVE<span class="text-blue-500">WARP</span></h1>
+        </div>
+        <div class="flex gap-4">
+            <label for="videoUpload" class="cursor-pointer bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg transition-all flex items-center gap-2 text-sm font-semibold">
+                <i class="fas fa-file-import"></i> IMPORT VIDEO
+            </label>
+            <input type="file" id="videoUpload" accept="video/*" class="hidden">
+            <button id="exportBtn" class="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg transition-all flex items-center gap-2 text-sm font-semibold">
+                <i class="fas fa-camera"></i> EXPORT PNG
+            </button>
+        </div>
+    </header>
+
+    <main class="flex-1 flex flex-col lg:flex-row p-6 gap-6 overflow-hidden">
+        
+        <!-- Controls Side Panel -->
+        <aside class="w-full lg:w-80 flex flex-col gap-6 custom-scrollbar lg:overflow-y-auto pr-2">
+            
+            <section class="space-y-6">
+                <div>
+                    <h3 class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Playback</h3>
+                    <div class="flex gap-2">
+                        <button id="playPauseBtn" class="flex-1 py-3 bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 transition-colors">
+                            <i class="fas fa-play" id="playIcon"></i>
+                        </button>
+                        <button id="resetBtn" class="px-4 py-3 bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 transition-colors">
+                            <i class="fas fa-redo-alt"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-xs font-bold text-blue-400 uppercase tracking-widest">Horizontal Waves</h3>
+                        <i class="fas fa-arrows-left-right text-slate-600"></i>
+                    </div>
+                    
+                    <div class="space-y-4">
+                        <div class="group">
+                            <div class="flex justify-between text-xs mb-1">
+                                <span class="text-slate-400">Amplitude</span>
+                                <span class="text-blue-400 font-mono" id="val-hAmp">0.05</span>
+                            </div>
+                            <input type="range" id="hAmp" min="0" max="0.5" step="0.001" value="0.05" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                        <div class="group">
+                            <div class="flex justify-between text-xs mb-1">
+                                <span class="text-slate-400">Frequency</span>
+                                <span class="text-blue-400 font-mono" id="val-hFreq">10.0</span>
+                            </div>
+                            <input type="range" id="hFreq" min="0" max="50" step="0.1" value="10.0" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                        <div class="group">
+                            <div class="flex justify-between text-xs mb-1">
+                                <span class="text-slate-400">Phase</span>
+                                <span class="text-blue-400 font-mono" id="val-hPhase">0.0</span>
+                            </div>
+                            <input type="range" id="hPhase" min="0" max="6.28" step="0.01" value="0" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                        <div class="group">
+                            <div class="flex justify-between text-xs mb-1">
+                                <span class="text-slate-400">Speed</span>
+                                <span class="text-blue-400 font-mono" id="val-hSpeed">1.0</span>
+                            </div>
+                            <input type="range" id="hSpeed" min="0" max="5" step="0.1" value="1.0" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-xs font-bold text-purple-400 uppercase tracking-widest">Vertical Waves</h3>
+                        <i class="fas fa-arrows-up-down text-slate-600"></i>
+                    </div>
+                    
+                    <div class="space-y-4">
+                        <div class="group">
+                            <div class="flex justify-between text-xs mb-1">
+                                <span class="text-slate-400">Amplitude</span>
+                                <span class="text-purple-400 font-mono" id="val-vAmp">0.05</span>
+                            </div>
+                            <input type="range" id="vAmp" min="0" max="0.5" step="0.001" value="0.05" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                        <div class="group">
+                            <div class="flex justify-between text-xs mb-1">
+                                <span class="text-slate-400">Frequency</span>
+                                <span class="text-purple-400 font-mono" id="val-vFreq">10.0</span>
+                            </div>
+                            <input type="range" id="vFreq" min="0" max="50" step="0.1" value="10.0" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                        <div class="group">
+                            <div class="flex justify-between text-xs mb-1">
+                                <span class="text-slate-400">Phase</span>
+                                <span class="text-purple-400 font-mono" id="val-vPhase">0.0</span>
+                            </div>
+                            <input type="range" id="vPhase" min="0" max="6.28" step="0.01" value="0" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                        <div class="group">
+                            <div class="flex justify-between text-xs mb-1">
+                                <span class="text-slate-400">Speed</span>
+                                <span class="text-purple-400 font-mono" id="val-vSpeed">1.0</span>
+                            </div>
+                            <input type="range" id="vSpeed" min="0" max="5" step="0.1" value="1.0" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </aside>
+
+        <!-- Preview Area -->
+        <div class="flex-1 glass-panel rounded-2xl flex flex-col items-center justify-center relative overflow-hidden">
+            <div id="dropZone" class="absolute inset-0 z-10 flex flex-col items-center justify-center bg-slate-900/80 border-2 border-dashed border-slate-700 m-8 rounded-xl hidden">
+                <i class="fas fa-cloud-upload-alt text-4xl text-blue-500 mb-4"></i>
+                <p class="text-lg font-semibold">Drop video file here</p>
+            </div>
+
+            <div class="canvas-container relative w-full h-full flex items-center justify-center p-4">
+                <canvas id="glCanvas"></canvas>
+                <div id="placeholder" class="absolute flex flex-col items-center text-slate-500 pointer-events-none">
+                    <i class="fas fa-video text-6xl mb-4 opacity-20"></i>
+                    <p class="text-sm">No video source loaded</p>
+                </div>
+            </div>
+
+            <!-- Stats Overlay -->
+            <div class="absolute bottom-6 left-6 right-6 flex justify-between items-end pointer-events-none">
+                <div class="glass-panel px-3 py-1 rounded text-[10px] text-slate-400 uppercase tracking-tighter border border-white/5">
+                    WebGL Render Core v2.4
+                </div>
+                <div id="videoMeta" class="text-right glass-panel px-3 py-1 rounded text-[10px] text-slate-400 uppercase tracking-tighter border border-white/5 opacity-0">
+                    Resolution: <span id="resText">0x0</span> | Status: <span id="statusText">Idle</span>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Hidden Video Element -->
+    <video id="sourceVideo" crossOrigin="anonymous" loop playsinline muted class="hidden"></video>
+
+    <script id="vs" type="x-shader/x-vertex">
+        attribute vec2 a_position;
+        attribute vec2 a_texCoord;
+        varying vec2 v_texCoord;
+        void main() {
+            gl_Position = vec4(a_position, 0, 1);
+            v_texCoord = a_texCoord;
+        }
+    </script>
+
+    <script id="fs" type="x-shader/x-fragment">
+        precision mediump float;
+        uniform sampler2D u_image;
+        uniform float u_time;
+        uniform float u_hAmp;
+        uniform float u_hFreq;
+        uniform float u_hPhase;
+        uniform float u_hSpeed;
+        uniform float u_vAmp;
+        uniform float u_vFreq;
+        uniform float u_vPhase;
+        uniform float u_vSpeed;
+        varying vec2 v_texCoord;
+
+        void main() {
+            vec2 uv = v_texCoord;
+            
+            // Calculate horizontal warp
+            float hWave = sin(uv.y * u_hFreq + u_hPhase + u_time * u_hSpeed) * u_hAmp;
+            // Calculate vertical warp
+            float vWave = sin(uv.x * u_vFreq + u_vPhase + u_time * u_vSpeed) * u_vAmp;
+            
+            vec2 warpedUv = vec2(uv.x + hWave, uv.y + vWave);
+            
+            // Clamp to edge or discard out of bounds
+            if(warpedUv.x < 0.0 || warpedUv.x > 1.0 || warpedUv.y < 0.0 || warpedUv.y > 1.0) {
+                gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+            } else {
+                gl_FragColor = texture2D(u_image, warpedUv);
+            }
+        }
+    </script>
+
+    <script>
+        const video = document.getElementById('sourceVideo');
+        const canvas = document.getElementById('glCanvas');
+        const uploadInput = document.getElementById('videoUpload');
+        const playPauseBtn = document.getElementById('playPauseBtn');
+        const playIcon = document.getElementById('playIcon');
+        const resetBtn = document.getElementById('resetBtn');
+        const exportBtn = document.getElementById('exportBtn');
+        const metaDiv = document.getElementById('videoMeta');
+        
+        let gl;
+        let program;
+        let texture;
+        let animationId;
+        let startTime = 0;
+        let isPlaying = false;
+
+        const params = {
+            hAmp: 0.05, hFreq: 10.0, hPhase: 0.0, hSpeed: 1.0,
+            vAmp: 0.05, vFreq: 10.0, vPhase: 0.0, vSpeed: 1.0
+        };
+
+        // Initialize WebGL
+        function initGL() {
+            gl = canvas.getContext('webgl', { preserveDrawingBuffer: true });
+            if (!gl) {
+                alert("WebGL not supported");
+                return;
+            }
+
+            const vsSource = document.getElementById('vs').text;
+            const fsSource = document.getElementById('fs').text;
+
+            const vs = compileShader(gl, vsSource, gl.VERTEX_SHADER);
+            const fs = compileShader(gl, fsSource, gl.FRAGMENT_SHADER);
+            program = createProgram(gl, vs, fs);
+
+            const positionLocation = gl.getAttribLocation(program, "a_position");
+            const texCoordLocation = gl.getAttribLocation(program, "a_texCoord");
+
+            const positionBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+                -1, -1,  1, -1, -1,  1,
+                -1,  1,  1, -1,  1,  1,
+            ]), gl.STATIC_DRAW);
+            gl.enableVertexAttribArray(positionLocation);
+            gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+
+            const texCoordBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+                0, 1,  1, 1,  0, 0,
+                0, 0,  1, 1,  1, 0,
+            ]), gl.STATIC_DRAW);
+            gl.enableVertexAttribArray(texCoordLocation);
+            gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
+
+            texture = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        }
+
+        function compileShader(gl, source, type) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error(gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            return shader;
+        }
+
+        function createProgram(gl, vs, fs) {
+            const prog = gl.createProgram();
+            gl.attachShader(prog, vs);
+            gl.attachShader(prog, fs);
+            gl.linkProgram(prog);
+            if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+                console.error(gl.getProgramInfoLog(prog));
+                return null;
+            }
+            return prog;
+        }
+
+        function render(time) {
+            if (!isPlaying && !video.paused) isPlaying = true;
+            
+            const currentTime = time * 0.001;
+            
+            gl.viewport(0, 0, canvas.width, canvas.height);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+            gl.useProgram(program);
+
+            // Update texture from video
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+
+            // Set Uniforms
+            gl.uniform1f(gl.getUniformLocation(program, "u_time"), currentTime);
+            gl.uniform1f(gl.getUniformLocation(program, "u_hAmp"), params.hAmp);
+            gl.uniform1f(gl.getUniformLocation(program, "u_hFreq"), params.hFreq);
+            gl.uniform1f(gl.getUniformLocation(program, "u_hPhase"), params.hPhase);
+            gl.uniform1f(gl.getUniformLocation(program, "u_hSpeed"), params.hSpeed);
+            gl.uniform1f(gl.getUniformLocation(program, "u_vAmp"), params.vAmp);
+            gl.uniform1f(gl.getUniformLocation(program, "u_vFreq"), params.vFreq);
+            gl.uniform1f(gl.getUniformLocation(program, "u_vPhase"), params.vPhase);
+            gl.uniform1f(gl.getUniformLocation(program, "u_vSpeed"), params.vSpeed);
+
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+            
+            animationId = requestAnimationFrame(render);
+        }
+
+        // File handling
+        uploadInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const url = URL.createObjectURL(file);
+                video.src = url;
+                video.load();
+                document.getElementById('placeholder').style.display = 'none';
+            }
+        });
+
+        video.addEventListener('loadedmetadata', () => {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            document.getElementById('resText').innerText = `${video.videoWidth}x${video.videoHeight}`;
+            document.getElementById('statusText').innerText = 'Ready';
+            metaDiv.classList.remove('opacity-0');
+            video.play();
+            playIcon.className = 'fas fa-pause';
+            isPlaying = true;
+            if (!animationId) animationId = requestAnimationFrame(render);
+        });
+
+        // Controls
+        playPauseBtn.addEventListener('click', () => {
+            if (video.paused) {
+                video.play();
+                playIcon.className = 'fas fa-pause';
+            } else {
+                video.pause();
+                playIcon.className = 'fas fa-play';
+            }
+        });
+
+        resetBtn.addEventListener('click', () => {
+            video.currentTime = 0;
+            // Also reset params
+            const inputs = ['hAmp', 'hFreq', 'hPhase', 'hSpeed', 'vAmp', 'vFreq', 'vPhase', 'vSpeed'];
+            const defaults = [0.05, 10.0, 0.0, 1.0, 0.05, 10.0, 0.0, 1.0];
+            inputs.forEach((id, i) => {
+                const el = document.getElementById(id);
+                el.value = defaults[i];
+                params[id] = defaults[i];
+                document.getElementById(`val-${id}`).innerText = defaults[i].toFixed(2);
+            });
+        });
+
+        exportBtn.addEventListener('click', () => {
+            const data = canvas.toDataURL("image/png");
+            const link = document.createElement('a');
+            link.download = `wavewarp-frame-${Date.now()}.png`;
+            link.href = data;
+            link.click();
+        });
+
+        // Parameter Syncing
+        const setupSlider = (id) => {
+            const el = document.getElementById(id);
+            const display = document.getElementById(`val-${id}`);
+            el.addEventListener('input', (e) => {
+       
